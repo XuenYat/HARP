@@ -1,3 +1,4 @@
+import os
 import sys
 sys.path.insert(0, 'thirdparty/DROID-SLAM/droid_slam')
 sys.path.insert(0, 'thirdparty/DROID-SLAM')
@@ -218,5 +219,115 @@ def test_slam(imagedir, masks, calib, stride=10, max_frame=50):
     del droid
 
     return reprojection_error, static_camera
+
+"""
+HARP addition to masked_droid_slam.py
+=====================================
+Append this code to the END of lib/camera/masked_droid_slam.py
+Do NOT replace any existing code.
+
+Also add to lib/camera/__init__.py:
+    from .masked_droid_slam import run_metric_slam, run_metric_slam_harp, calibrate_intrinsics
+"""
+
+
+def run_metric_slam_harp(img_folder, masks=None, calib=None, is_static=False,
+                         save_intermediates=None):
+    """
+    HARP-modified version of run_metric_slam.
+    Identical behavior, but additionally saves intermediate variables.
+    
+    Additional args:
+        save_intermediates: str, path to save intermediate npz file.
+                           If None, behaves identically to original.
+    """
+
+    imgfiles = sorted(glob(f'{img_folder}/*.jpg'))
+
+    ##### If static camera #####
+    if is_static:
+        pred_cam_t = torch.zeros([len(imgfiles), 3])
+        pred_cam_r = torch.eye(3).expand(len(imgfiles), 3, 3)
+        return pred_cam_r, pred_cam_t
+
+    ##### Masked droid slam #####
+    droid, traj = run_slam(img_folder, masks=masks, calib=calib)
+    n = droid.video.counter.value
+    tstamp = droid.video.tstamp.cpu().int().numpy()[:n]
+    disps = droid.video.disps_up.cpu().numpy()[:n]
+    del droid
+    torch.cuda.empty_cache()
+
+    ##### Estimate Metric Depth #####
+    repo = "isl-org/ZoeDepth"
+    model_zoe_n = torch.hub.load(repo, "ZoeD_N", pretrained=True)
+    _ = model_zoe_n.eval()
+    model_zoe_n = model_zoe_n.to('cuda')
+
+    pred_depths = []
+    H, W = get_dimention(img_folder)
+    for t in tqdm(tstamp):
+        img = cv2.imread(imgfiles[t])[:,:,::-1]
+        img = cv2.resize(img, (W, H))
+        img_pil = Image.fromarray(img)
+        pred_depth = model_zoe_n.infer_pil(img_pil)
+        pred_depths.append(pred_depth)
+
+    ##### Estimate Metric Scale #####
+    scales_ = []
+    slam_depths_list = []
+    n = len(tstamp)
+    for i in tqdm(range(n)):
+        t = tstamp[i]
+        disp = disps[i]
+        pred_depth = pred_depths[i]
+        slam_depth = 1/disp
+        
+        if masks is None:
+            msk = None
+        else:
+            msk = masks[t].numpy()
+
+        scale = est_scale_hybrid(slam_depth, pred_depth, msk=msk)
+        scales_.append(scale)
+        slam_depths_list.append(slam_depth)
+
+    scale = np.median(scales_)
+
+    ##### HARP: Save intermediates #####
+    if save_intermediates is not None:
+        save_dir = os.path.dirname(save_intermediates)
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+        
+        intermediate_data = {
+            'tstamps': tstamp,
+            'scales_bg': np.array(scales_),
+            'scale_bg_final': np.array(scale),
+            'H': H, 'W': W,
+        }
+        
+        # Save depth maps separately (they can be large)
+        depth_save_dir = save_intermediates.replace('.npz', '_depths')
+        os.makedirs(depth_save_dir, exist_ok=True)
+        
+        for i in range(n):
+            np.savez_compressed(
+                f'{depth_save_dir}/keyframe_{i:04d}.npz',
+                slam_depth=slam_depths_list[i],
+                pred_depth=pred_depths[i],
+                tstamp=tstamp[i]
+            )
+        
+        np.savez(save_intermediates, **intermediate_data)
+        print(f"[HARP] Intermediates saved to {save_intermediates}")
+        print(f"[HARP] Depth maps saved to {depth_save_dir}/ ({n} keyframes)")
+
+    # Convert to metric-scale camera extrinsics: R_wc, T_wc
+    pred_cam_t = torch.tensor(traj[:, :3]) * scale
+    pred_cam_q = torch.tensor(traj[:, 3:])
+    pred_cam_r = quaternion_to_matrix(pred_cam_q[:,[3,0,1,2]])
+
+    return pred_cam_r, pred_cam_t
 
 

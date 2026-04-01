@@ -208,9 +208,27 @@ def cam_loss(batch):
     return loss.clamp(min=None, max=10.0)
 
 
+
+def beta_consistency_loss(batch, seq_len=16):
+    """Temporal consistency loss on SMPL shape parameters."""
+    pred_betas = batch['pred_betas']
+    device = pred_betas.device
+    BT = pred_betas.shape[0]
+    if BT < seq_len:
+        return torch.FloatTensor(1).fill_(0.).mean().to(device)
+    B = BT // seq_len
+    betas = pred_betas[:B * seq_len].reshape(B, seq_len, -1)
+    diff = betas[:, 1:] - betas[:, :-1]
+    smooth_loss = (diff ** 2).mean()
+    mean_beta = betas.mean(dim=1, keepdim=True)
+    dev = betas - mean_beta
+    mean_loss = (dev ** 2).mean()
+    return 0.5 * smooth_loss + 0.5 * mean_loss
+
+
 collection = {'KPT2D': keypoint_loss, 'KPT3D': keypoint_3d_loss, 'SMPL':  smpl_losses,
               'CAM_S': cam_depth_loss, 'CAM': cam_loss, 'V3D': vertice_loss, 'ACCEL': acceleration_loss,
-              'SMPL_PLUS': smpl_losses_plus}
+              'SMPL_PLUS': smpl_losses_plus, 'BETA_CONSIST': beta_consistency_loss}
 
 
 def compile_criterion(cfg):

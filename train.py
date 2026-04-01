@@ -47,7 +47,7 @@ def main(cfg):
     model = HMR_VIMO(cfg=cfg)
     checkpoint = cfg.MODEL.CHECKPOINT
     state_dict = torch.load(checkpoint, map_location=cfg.DEVICE, weights_only=True)
-    _ = model.load_state_dict(state_dict['state_dict'], strict=False)
+    _ = model.load_state_dict(state_dict.get('state_dict', state_dict.get('model', state_dict)), strict=False)
 
     model = model.to(cfg.DEVICE)
     model.frozen_modules = [model.backbone]

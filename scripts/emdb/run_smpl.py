@@ -16,6 +16,7 @@ from lib.datasets.image_dataset import ImageDataset
 parser = argparse.ArgumentParser()
 parser.add_argument('--split', type=int, default=2)
 parser.add_argument('--output_dir', type=str, default='results/emdb/smpl')
+parser.add_argument('--ckpt', type=str, default='results/harp_beta_consist/checkpoint_best.pth.tar')
 parser.add_argument('--efficient', action='store_true', help='efficient option, but increase ACC error.')
 args = parser.parse_args()
 
@@ -23,7 +24,7 @@ args = parser.parse_args()
 # EMDB dataset and splits
 roots = []
 for p in range(10):
-    folder = f'/mnt/kostas-graid/datasets/yufu/emdb/P{p}'
+    folder = f'/workspace/dataset/emdb/P{p}'
     root = sorted(glob(f'{folder}/*'))
     roots.extend(root)
 
@@ -42,7 +43,7 @@ os.makedirs(savefolder, exist_ok=True)
 
 # HPS model
 device = 'cuda'
-model = get_hmr_vimo(checkpoint='data/pretrain/vimo_checkpoint.pth.tar').to(device)
+model = get_hmr_vimo(checkpoint=args.ckpt).to(device)
 
 
 # Predict SMPL on EMDB (subset: spl)
