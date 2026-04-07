@@ -1,115 +1,138 @@
-## :railway_car: TRAM 
-Official implementation for the paper: \
-**TRAM: Global Trajectory and Motion of 3D Humans from in-the-wild Videos**  
-[Yufu Wang](https://yufu-wang.github.io), [Ziyun Wang](https://ziyunclaudewang.github.io/), [Lingjie Liu](https://lingjie0206.github.io/), [Kostas Daniilidis](https://www.cis.upenn.edu/~kostas/)\
-[[Project Page](https://yufu-wang.github.io/tram4d/)]
+## HARP: Human Anchor for Robust Positioning in Monocular Trajectory Annotation
 
-<img src="data/teaser.jpg" width="700">
+Built on top of [TRAM](https://github.com/yufu-wang/tram), HARP improves the robustness of metric scale estimation for monocular human trajectory annotation. Instead of relying solely on background depth prediction (which fails in low-texture, dark, or stage environments), HARP leverages the metric depth already estimated by pose regression as a geometric anchor.
 
-https://github.com/yufu-wang/tram/assets/26578575/e857366a-4b51-42ff-bd16-07d800455015
+### Key Features
+- **Boundary Sampling**: Extracts SLAM depth at the human-scene boundary to bridge pose regression and SLAM coordinate frames
+- **Uncertainty-Aware Fusion**: Fuses human-derived and background-derived scale estimates via inverse-variance weighting (MLE), automatically adapting to scene conditions
+- **Temporal Shape Consistency**: Regularizes body shape predictions to stabilize metric depth estimates
+- **Drop-in Module**: No retraining required, <1ms overhead per frame
 
-## Updates
-- [2025/06] TRAM is integrated in our new work, [PromptHMR](https://github.com/yufu-wang/PromptHMR). Please check it out!
-- [2025/02] Add training code and preprocessed data.
-- [2025/02] Update with better gravity & floor prediction. Add EMDB evaluation.
-- [2024/04] Initial release.
+### Results on EMDB-2
+
+| Method | PA-MPJPE | WA-MPJPE<sub>100</sub> | W-MPJPE<sub>100</sub> | RTE(%) |
+|--------|----------|------------|-----------|--------|
+| TRACE | 58.0 | 529.0 | 1702.3 | 17.7 |
+| GLAMR | 56.0 | 280.8 | 726.6 | 11.4 |
+| SLAHMR | 61.5 | 326.9 | 776.1 | 10.2 |
+| WHAM | 38.2 | 133.3 | 343.9 | 4.6 |
+| TRAM | 37.6 | 78.7 | 223.9 | 1.5 |
+| **HARP (ours)** | **37.6** | **78.0** | **218.0** | **1.3** |
+
+Under background degradation, HARP reduces scale drift by 50% and trajectory error by 38% compared to TRAM.
 
 ## Installation
-1. Clone this repo with the `--recursive` flag.
-```Bash
-git clone --recursive https://github.com/yufu-wang/tram
-```
-2. Creating a new anaconda environment.
-```Bash
+
+Follow the TRAM installation steps:
+
+```bash
+# Clone with submodules
+git clone --recursive https://github.com/XuenYat/HARP
+
+# Create environment
 conda create -n tram python=3.10 -y
 conda activate tram
 bash install.sh
-```
-3. Compile DROID-SLAM. If you encountered difficulty in this step, please refer to its [official release](https://github.com/princeton-vl/DROID-SLAM) for more info. In this project, DROID is modified to support masking. 
-```Bash
+
+# Compile DROID-SLAM
 cd thirdparty/DROID-SLAM
 python setup.py install
 cd ../..
 ```
 
-## Prepare data
-Register at [SMPLify](https://smplify.is.tue.mpg.de) and [SMPL](https://smpl.is.tue.mpg.de), whose usernames and passwords will be used by our script to download the SMPL models. In addition, we will fetch trained checkpoints and an example video. Note that thirdparty models have their own licenses. 
+## Prepare Data
 
-Run the following to fetch all models and checkpoints to `data/`. It also downloads `example_video.mov` for the demo.
-```Bash
+Register at [SMPLify](https://smplify.is.tue.mpg.de) and [SMPL](https://smpl.is.tue.mpg.de) to download SMPL models. Then fetch all models and checkpoints:
+
+```bash
 bash scripts/download_models.sh
 ```
 
-## Run demo on videos
-This project integrates the complete 4D human system, including tracking, slam, and 4D human capture in the world space. We separate the core functionalities into different scripts, which should be run **sequentially**. Each step will save its result to be used by the next step. All results will be saved in a folder with the same name as the video.
+## Inference
 
+### HARP Pipeline (Recommended)
 ```bash
-# 1. Run Masked Droid SLAM (also detect+track humans in this step)
-python scripts/estimate_camera.py --video "./example_video.mov" 
-# -- You can indicate if the camera is static. The algorithm will try to catch it as well.
-python scripts/estimate_camera.py --video "./another_video.mov" --static_camera
+# Run HARP with uncertainty-aware fusion
+python scripts/run_harp.py --video "./video.mov"
 
-# 2. Run 4D human capture with VIMO.
-python scripts/estimate_humans.py --video "./example_video.mov"
+# Use TRAM's ZoeDepth scale instead
+python scripts/run_harp.py --video "./video.mov" --method tram
 
-# 3. Put everything together. Render the output video.
-python scripts/visualize_tram.py --video "./example_video.mov"
+# Visualize results
+python scripts/visualize_tram.py --video "./video.mov" --method harp
 ```
 
-Running the above three scripts on the provided video `./example_video.mov` will create a folder `./results/exapmle_video` and save all results in it. Please see available arguments in the scripts.
-
-
-## Evaluation
-You can run inference and evaluation from scratch on EMDB as follow.
-
+### Legacy Step-by-Step Pipeline
 ```bash
-# Inference and evaluation (saves results in "results/emdb")
-bash scripts/emdb/run.sh
+python scripts/estimate_camera.py --video "./video.mov"
+python scripts/estimate_humans.py --video "./video.mov"
+python scripts/visualize_tram.py --video "./video.mov"
 ```
 
-You can also download our saved results [here](https://drive.google.com/drive/folders/1ghLfoFpaoi1SHnYJSM1iaOFzetwLkHD8?usp=sharing), skipping the inference, and run evaluation directly as follow.
+## Evaluation on EMDB
+
 ```bash
-# Evaluation only 
-python scripts/emdb/run_eval.py --split 2 --input_dir "results/emdb"
+# Full HARP evaluation with per-category breakdown
+python scripts/emdb/harp_eval_emdb.py \
+    --emdb_root /path/to/emdb \
+    --tram_results results/emdb_harp_shapereg \
+    --harp_intermediates results/emdb_harp/intermediates \
+    --save_dir results/harp_eval
+
+# Background degradation robustness test
+python scripts/experiments/harp_degradation.py \
+    --emdb_root /path/to/emdb \
+    --intermediates_dir results/emdb_harp/intermediates \
+    --save_dir results/harp_degradation
 ```
 
+## Training
 
+```bash
+# Train VIMO from HMR2b initialization
+python train.py --cfg configs/config_vimo.yaml
 
-## Training 
-**Data**. We provide the preprocessed data (e.g. crops) and annotations [HERE](https://drive.google.com/drive/folders/1kTrsfZRfWjZOnwNn-5OOyvmVCCXoGBUG?usp=share_link), except for [BEDLAM](https://bedlam.is.tue.mpg.de) (30fps). Please download our preprocessed data and edit **data_config.py** to point to the right paths. For BEDLAM, please download the 30fps version (e.g. the mp4), and use **scripts/extract_bedlam_jpg.py** and **scripts/crop_datasets.py** to process it to the correct format. Please submit an issue if you run into troubles in this step.
+# HARP fine-tuning with temporal shape consistency loss
+python train.py --cfg configs/config_harp.yaml
+```
 
-**Checkpoint**. Run this command to download the HMR2b checkpoint as our initialization.
+Download the HMR2b pretrained checkpoint first:
 ```bash
 bash scripts/download_pretrain.sh
 ```
 
-**Training**.
-```bash
-python train.py --cfg configs/config_vimo.yaml
-```
-Results will be save under **results/EXP_NAME**. 
+## Method Overview
 
+HARP computes a human-derived scale from two signals:
+1. **Metric depth** (t_z) from VIMO pose regression, grounded in body proportion priors
+2. **Boundary SLAM depth** sampled at the human-scene boundary (feet, sides)
+
+These are fused with the background-derived scale via inverse-variance weighting:
+
+```
+α* = (α_bg/σ²_bg + α_human/σ²_human) / (1/σ²_bg + 1/σ²_human)
+```
+
+When background depth is reliable, the fusion defers to α_bg. In degraded environments, it automatically shifts toward the human anchor.
 
 ## Acknowledgements
-We benefit greatly from the following open source works, from which we adapted parts of our code.
+
+HARP builds on the excellent [TRAM](https://github.com/yufu-wang/tram) framework. We also benefit from:
 - [WHAM](https://github.com/yohanshin/WHAM): visualization and evaluation
 - [HMR2.0](https://github.com/shubham-goel/4D-Humans): baseline backbone
 - [DROID-SLAM](https://github.com/princeton-vl/DROID-SLAM): baseline SLAM
 - [ZoeDepth](https://github.com/isl-org/ZoeDepth): metric depth prediction
-- [BEDLAM](https://github.com/pixelite1201/BEDLAM): large-scale video dataset
 - [EMDB](https://github.com/eth-ait/emdb): evaluation dataset
 
-In addition, the pipeline includes [Detectron2](https://github.com/facebookresearch/detectron2), [Segment-Anything](https://github.com/facebookresearch/segment-anything), and [DEVA-Track-Anything](https://github.com/hkchengrex/Tracking-Anything-with-DEVA).
+The pipeline also includes [Detectron2](https://github.com/facebookresearch/detectron2), [Segment-Anything](https://github.com/facebookresearch/segment-anything), and [DEVA-Track-Anything](https://github.com/hkchengrex/Tracking-Anything-with-DEVA).
 
-
-  
 ## Citation
+
 ```bibtex
-@article{wang2024tram,
-  title={TRAM: Global Trajectory and Motion of 3D Humans from in-the-wild Videos},
-  author={Wang, Yufu and Wang, Ziyun and Liu, Lingjie and Daniilidis, Kostas},
-  journal={arXiv preprint arXiv:2403.17346},
-  year={2024}
+@article{xu2025harp,
+  title={HARP: Human Anchor for Robust Positioning in Monocular Trajectory Annotation},
+  author={Xu, Sicheng and Dou, Huanxin},
+  journal={IEEE Robotics and Automation Letters},
+  year={2025}
 }
 ```
-
