@@ -1,6 +1,14 @@
 ## HARP: Human Anchor for Robust Positioning in Monocular Trajectory Annotation
 
+> **Note**: Full code will be released upon paper acceptance. This repository currently contains the project overview and demo video.
+
 Built on top of [TRAM](https://github.com/yufu-wang/tram), HARP improves the robustness of metric scale estimation for monocular human trajectory annotation. Instead of relying solely on background depth prediction (which fails in low-texture, dark, or stage environments), HARP leverages the metric depth already estimated by pose regression as a geometric anchor.
+
+### Demo: TRAM vs HARP on Stage Performance Video
+
+https://github.com/user-attachments/assets/supplementary_video.mp4
+
+*Top: TRAM (background-based scale) — severe trajectory drift and jitter. Bottom: HARP (human-anchored scale) — stable trajectory.*
 
 ### Key Features
 - **Boundary Sampling**: Extracts SLAM depth at the human-scene boundary to bridge pose regression and SLAM coordinate frames
@@ -21,9 +29,23 @@ Built on top of [TRAM](https://github.com/yufu-wang/tram), HARP improves the rob
 
 Under background degradation, HARP reduces scale drift by 50% and trajectory error by 38% compared to TRAM.
 
+## Method Overview
+
+HARP computes a human-derived scale from two signals:
+1. **Metric depth** (t_z) from VIMO pose regression, grounded in body proportion priors
+2. **Boundary SLAM depth** sampled at the human-scene boundary (feet, sides)
+
+These are fused with the background-derived scale via inverse-variance weighting:
+
+```
+α* = (α_bg/σ²_bg + α_human/σ²_human) / (1/σ²_bg + 1/σ²_human)
+```
+
+When background depth is reliable, the fusion defers to α_bg. In degraded environments, it automatically shifts toward the human anchor.
+
 ## Installation
 
-Follow the TRAM installation steps:
+*Code will be released upon acceptance.* The setup follows [TRAM](https://github.com/yufu-wang/tram):
 
 ```bash
 # Clone with submodules
@@ -40,14 +62,6 @@ python setup.py install
 cd ../..
 ```
 
-## Prepare Data
-
-Register at [SMPLify](https://smplify.is.tue.mpg.de) and [SMPL](https://smpl.is.tue.mpg.de) to download SMPL models. Then fetch all models and checkpoints:
-
-```bash
-bash scripts/download_models.sh
-```
-
 ## Inference
 
 ### HARP Pipeline (Recommended)
@@ -60,13 +74,6 @@ python scripts/run_harp.py --video "./video.mov" --method tram
 
 # Visualize results
 python scripts/visualize_tram.py --video "./video.mov" --method harp
-```
-
-### Legacy Step-by-Step Pipeline
-```bash
-python scripts/estimate_camera.py --video "./video.mov"
-python scripts/estimate_humans.py --video "./video.mov"
-python scripts/visualize_tram.py --video "./video.mov"
 ```
 
 ## Evaluation on EMDB
@@ -96,25 +103,6 @@ python train.py --cfg configs/config_vimo.yaml
 python train.py --cfg configs/config_harp.yaml
 ```
 
-Download the HMR2b pretrained checkpoint first:
-```bash
-bash scripts/download_pretrain.sh
-```
-
-## Method Overview
-
-HARP computes a human-derived scale from two signals:
-1. **Metric depth** (t_z) from VIMO pose regression, grounded in body proportion priors
-2. **Boundary SLAM depth** sampled at the human-scene boundary (feet, sides)
-
-These are fused with the background-derived scale via inverse-variance weighting:
-
-```
-α* = (α_bg/σ²_bg + α_human/σ²_human) / (1/σ²_bg + 1/σ²_human)
-```
-
-When background depth is reliable, the fusion defers to α_bg. In degraded environments, it automatically shifts toward the human anchor.
-
 ## Acknowledgements
 
 HARP builds on the excellent [TRAM](https://github.com/yufu-wang/tram) framework. We also benefit from:
@@ -131,7 +119,7 @@ The pipeline also includes [Detectron2](https://github.com/facebookresearch/dete
 ```bibtex
 @article{xu2025harp,
   title={HARP: Human Anchor for Robust Positioning in Monocular Trajectory Annotation},
-  author={Xu, Sicheng and Dou, Huanxin},
+  author={Xu, Sicheng and Dou, Huanxin and He, Fengqin and Song, Yaqing and An, Kang},
   journal={IEEE Robotics and Automation Letters},
   year={2025}
 }
