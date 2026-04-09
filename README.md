@@ -6,7 +6,7 @@ Built on top of [TRAM](https://github.com/yufu-wang/tram), HARP improves the rob
 
 ### Demo: TRAM vs HARP on Stage Performance Video
 
-https://github.com/XuenYat/HARP/raw/main/supplementary_video.mp4
+https://github.com/user-attachments/assets/a49909a2-6b67-4dc2-925d-a122f9bcd1e7
 
 *Top: TRAM (background-based scale) — severe trajectory drift and jitter. Bottom: HARP (human-anchored scale) — stable trajectory.*
 
