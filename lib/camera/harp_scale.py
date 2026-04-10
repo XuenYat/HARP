@@ -125,42 +125,55 @@ def est_scale_human_temporal(slam_depths, pred_trans_seq, masks_seq, tstamps=Non
     return scale, scales, confidences
 
 
-def est_scale_harp(scale_bg, scale_human, conf_bg, conf_human):
+def est_scale_harp(scale_bg, scale_human, var_bg, var_human):
     """
-    HARP: Confidence-aware fusion of background and human scale estimates.
-    
+    HARP: Uncertainty-aware fusion of background and human scale estimates
+    via inverse-variance weighting (Maximum Likelihood Estimation).
+
+    Assuming both estimates are independent Gaussian observations of the
+    true scale α*:
+        α_bg    ~ N(α*, σ²_bg)
+        α_human ~ N(α*, σ²_human)
+
+    The MLE is the inverse-variance weighted mean:
+        α* = (α_bg/σ²_bg + α_human/σ²_human) / (1/σ²_bg + 1/σ²_human)
+
     Args:
-        scale_bg: float, background-based scale (from ZoeDepth, TRAM's method)
+        scale_bg: float, background-based scale (from ZoeDepth)
         scale_human: float, human geometry-based scale
-        conf_bg: float, confidence of background scale (0-1)
-        conf_human: float, confidence of human scale (0-1)
-    
+        var_bg: float, measurement variance of background scale (σ²_bg)
+        var_human: float, measurement variance of human scale (σ²_human)
+
     Returns:
         scale_fused: float, the fused metric scale
         source: str, which source dominated ('bg', 'human', 'fused')
+        w_human: float, weight assigned to human scale (0-1)
     """
-    if scale_human is None or conf_human == 0:
-        return scale_bg, 'bg'
-    
-    if scale_bg is None or conf_bg == 0:
-        return scale_human, 'human'
-    
-    # Normalize confidences
-    total = conf_bg + conf_human + 1e-8
-    w_bg = conf_bg / total
-    w_human = conf_human / total
-    
+    if scale_human is None or np.isinf(var_human):
+        return scale_bg, 'bg', 0.0
+
+    if scale_bg is None or np.isinf(var_bg):
+        return scale_human, 'human', 1.0
+
+    # Clamp variances to avoid division by zero
+    var_bg = max(var_bg, 1e-8)
+    var_human = max(var_human, 1e-8)
+
+    # Inverse-variance weighting (MLE under Gaussian assumption)
+    w_human = (1.0 / var_human) / (1.0 / var_human + 1.0 / var_bg)
+    w_bg = 1.0 - w_human
+
     scale_fused = w_bg * scale_bg + w_human * scale_human
-    
+
     # Determine dominant source
-    if w_bg > 0.7:
-        source = 'bg'
-    elif w_human > 0.7:
+    if w_human > 0.7:
         source = 'human'
+    elif w_bg > 0.7:
+        source = 'bg'
     else:
         source = 'fused'
-    
-    return scale_fused, source
+
+    return scale_fused, source, w_human
 
 
 def compute_bg_confidence(scales_bg_per_frame, slam_depths, pred_depths, masks_seq):

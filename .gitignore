@@ -46,3 +46,14 @@ ipython_config.py
 # pyenv
 .python-version
 CLAUDE.md
+
+# Paper artifacts
+*.pdf
+*.tex
+paper_figures/
+
+# Claude Code
+.claude/
+
+# Paper-writing experiment/plotting scripts
+scripts/experiments/
