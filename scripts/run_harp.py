@@ -139,9 +139,6 @@ def run_vimo(img_folder, tracks_dict, img_focal, img_center, hps_folder, max_hum
     model = get_hmr_vimo(checkpoint='data/pretrain/vimo_checkpoint.pth.tar')
     
     # Sort tracks by length
-    # Handle numpy array loaded from older format
-    if isinstance(tracks_dict, np.ndarray):
-        tracks_dict = tracks_dict.item()
     tid = [k for k in tracks_dict.keys()]
     lens = [len(trk) for trk in tracks_dict.values()]
     rank = np.argsort(lens)[::-1]
@@ -182,132 +179,65 @@ def run_vimo(img_folder, tracks_dict, img_focal, img_center, hps_folder, max_hum
 
 
 def estimate_scale_harp(slam_depths, tstamps, vimo_data):
-    """
-    Estimate scale using HARP (boundary-based).
-
-    Returns:
-        scale: float, median of per-keyframe boundary scales
-        var_human: float, variance of per-keyframe scale estimates (σ²_human)
-    """
-    print('\n  HARP boundary scale estimation...')
-
+    """Estimate scale using HARP (boundary-based)"""
+    print('\n[4/4] Scale Estimation (HARP)...')
+    
     pred_trans = vimo_data['pred_trans'].reshape(-1, 3)
     img_focal = float(vimo_data['img_focal'])
     img_center = vimo_data['img_center']
     frames = vimo_data['frame']
-
+    
     scales = []
-
+    
     for i, t in enumerate(tstamps):
         if i >= len(slam_depths):
             continue
-
+        
         # Find corresponding VIMO frame
         frame_idx = np.where(frames == t)[0]
         if len(frame_idx) == 0:
             continue
-
+        
         tx, ty, tz = pred_trans[frame_idx[0]]
         slam_depth = slam_depths[i]
-
+        
         s = est_scale_boundary(slam_depth, tz, tx, ty, img_focal, img_center)
         if s is not None and 0.5 < s < 20:
             scales.append(s)
-
+    
     if not scales:
         print("  Warning: No valid boundary scales!")
-        return None, float('inf')
-
+        return None
+    
     scale = np.median(scales)
-    var_human = float(np.var(scales)) if len(scales) > 1 else float('inf')
-    print(f"  α_human = {scale:.3f}, σ²_human = {var_human:.4f} (from {len(scales)}/{len(tstamps)} keyframes)")
-    return scale, var_human
+    print(f"  α_bound = {scale:.3f} (from {len(scales)}/{len(tstamps)} keyframes)")
+    return scale
 
 
 def estimate_scale_tram(slam_depths, tstamps, masks_np, img_folder):
-    """
-    Estimate scale using TRAM (ZoeDepth-based).
-
-    Returns:
-        scale: float, median of per-keyframe background scales
-        var_bg: float, measurement variance (σ²_bg) from fitting residuals
-    """
-    print('\n  TRAM background scale estimation...')
-
-    import os as _os
-    zoe = torch.hub.load(_os.path.expanduser('~/.cache/torch/hub/isl-org_ZoeDepth_main'),
-                          "ZoeD_N", pretrained=True, source='local').eval().cuda()
-
+    """Estimate scale using TRAM (ZoeDepth-based)"""
+    print('\n[4/4] Scale Estimation (TRAM)...')
+    
+    repo = "isl-org/ZoeDepth"
+    zoe = torch.hub.load(repo, "ZoeD_N", pretrained=True).eval().cuda()
+    
     imgfiles = sorted(glob(f'{img_folder}/*.jpg'))
     H, W = get_dimention(img_folder)
     scales = []
-    residual_vars = []
-
+    
     for i, t in enumerate(tqdm(tstamps, desc="  ZoeDepth")):
         if i >= len(slam_depths):
             continue
         img = cv2.imread(imgfiles[t])[:, :, ::-1]
         img = cv2.resize(img, (W, H))
-        img_pil = Image.fromarray(img)
-        pred_depth = zoe.infer_pil(img_pil)
-        # Resize to match SLAM depth resolution
-        slam_h, slam_w = slam_depths[i].shape
-        if pred_depth.shape != (slam_h, slam_w):
-            pred_depth = cv2.resize(pred_depth, (slam_w, slam_h))
+        pred_depth = zoe.infer_pil(Image.fromarray(img))
         msk = masks_np[t] if t < len(masks_np) else None
-        s, rv = est_scale_hybrid(slam_depths[i], pred_depth, msk=msk, return_variance=True)
+        s = est_scale_hybrid(slam_depths[i], pred_depth, msk=msk)
         scales.append(s)
-        residual_vars.append(rv)
-
+    
     scale = np.median(scales)
-    # σ²_bg: combine per-frame fitting residual variance with cross-frame scale variance
-    var_bg = float(np.median(residual_vars)) + float(np.var(scales)) if len(scales) > 1 else float('inf')
-    print(f"  α_bg = {scale:.3f}, σ²_bg = {var_bg:.4f}")
-    return scale, var_bg
-
-
-def fuse_scales(scale_human, var_human, scale_bg, var_bg):
-    """
-    Uncertainty-aware scale fusion via inverse-variance weighting (MLE).
-
-    Under the assumption that both estimates are independent Gaussian
-    observations of the true scale:
-        α_human ~ N(α*, σ²_human),  α_bg ~ N(α*, σ²_bg)
-
-    The maximum likelihood estimate is:
-        α* = (α_human/σ²_human + α_bg/σ²_bg) / (1/σ²_human + 1/σ²_bg)
-
-    Returns:
-        scale: float, fused scale estimate
-        source: str, dominant source ('human', 'bg', or 'fused')
-        w_human: float, weight assigned to human scale (0-1)
-    """
-    # Handle degenerate cases
-    if scale_human is None or np.isinf(var_human):
-        return scale_bg, 'bg', 0.0
-    if scale_bg is None or np.isinf(var_bg):
-        return scale_human, 'human', 1.0
-
-    # Clamp variances to avoid division by zero
-    var_human = max(var_human, 1e-8)
-    var_bg = max(var_bg, 1e-8)
-
-    # Inverse-variance weighting
-    w_human = (1.0 / var_human) / (1.0 / var_human + 1.0 / var_bg)
-    w_bg = 1.0 - w_human
-
-    scale = w_human * scale_human + w_bg * scale_bg
-
-    # Determine dominant source for logging
-    if w_human > 0.7:
-        source = 'human'
-    elif w_bg > 0.7:
-        source = 'bg'
-    else:
-        source = 'fused'
-
-    print(f"  Fusion: w_human={w_human:.2f}, w_bg={w_bg:.2f} → α={scale:.3f} (source: {source})")
-    return scale, source, w_human
+    print(f"  α_bg = {scale:.3f}")
+    return scale
 
 
 # ============================================================
@@ -412,40 +342,20 @@ def main():
         return
     
     # Stage 4: Scale estimation
-    print('\n[4/4] Scale Estimation...')
-    scale_cache_file = f'{seq_folder}/scale_cache_harp.npy'
-
     if method == 'harp':
-        # Try loading cached intermediate scale values
-        if os.path.exists(scale_cache_file):
-            print('  Loading cached scale estimates...')
-            cache = np.load(scale_cache_file, allow_pickle=True).item()
-            scale_human, var_human = cache['scale_human'], cache['var_human']
-            scale_bg, var_bg = cache['scale_bg'], cache['var_bg']
-        else:
-            # Compute both scale estimates with uncertainty
-            scale_human, var_human = estimate_scale_harp(slam_depths, tstamps, vimo_data)
-            scale_bg, var_bg = estimate_scale_tram(slam_depths, tstamps, masks_np, img_folder)
-
-            # Cache intermediate results for fast re-fusion
-            np.save(scale_cache_file, {
-                'scale_human': scale_human, 'var_human': var_human,
-                'scale_bg': scale_bg, 'var_bg': var_bg,
-            })
-
-        # Uncertainty-aware fusion (inverse-variance weighting)
-        scale, source, w_human = fuse_scales(scale_human, var_human, scale_bg, var_bg)
+        scale = estimate_scale_harp(slam_depths, tstamps, vimo_data)
+        if scale is None:
+            print("  HARP failed, falling back to TRAM...")
+            scale = estimate_scale_tram(slam_depths, tstamps, masks_np, img_folder)
     else:  # tram
-        scale, var_bg = estimate_scale_tram(slam_depths, tstamps, masks_np, img_folder)
-        source = 'bg'
-        w_human = 0.0
-
+        scale = estimate_scale_tram(slam_depths, tstamps, masks_np, img_folder)
+    
     # Apply scale
     cam_T = cam_T_rel * scale
-
+    
     # Align to world
     wd_cam_R, wd_cam_T, spec_f = align_cam_to_world(imgfiles[0], cam_R, cam_T)
-
+    
     # Save camera with method suffix
     camera = {
         'pred_cam_R': cam_R.numpy(),
@@ -457,8 +367,6 @@ def main():
         'spec_focal': spec_f,
         'scale': scale,
         'method': method,
-        'scale_source': source,
-        'w_human': w_human,
     }
     
     np.save(f'{seq_folder}/camera_{method}.npy', camera)

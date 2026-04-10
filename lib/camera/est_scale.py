@@ -56,8 +56,8 @@ def est_scale_gmof(slam_depth, pred_depth, lr=1, sigma=0.5, iters=500, msk=None)
     return scale
 
 
-def est_scale_hybrid(slam_depth, pred_depth, sigma=0.5, msk=None,
-                     far_thresh=10, return_variance=False):
+def est_scale_hybrid(slam_depth, pred_depth, sigma=0.5, msk=None, 
+                     far_thresh=10):
     """ Depth-align by iterative + robust least-square """
     if msk is None:
         msk = np.zeros_like(pred_depth)
@@ -91,12 +91,6 @@ def est_scale_hybrid(slam_depth, pred_depth, sigma=0.5, msk=None,
     x0 = torch.tensor([scale])
     result = minimize(f, x0,  method='bfgs')
     scale = result.x.detach().cpu().item()
-
-    if return_variance:
-        # Compute residual variance: Var(SLAM*scale - ZoeDepth) on inlier region
-        residuals = (sm * scale - pm).detach().cpu().numpy()
-        residual_var = float(np.var(residuals)) if len(residuals) > 0 else 1e6
-        return scale, residual_var
 
     return scale
 

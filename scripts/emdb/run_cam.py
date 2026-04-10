@@ -21,15 +21,13 @@ from detectron2.config import LazyConfig
 parser = argparse.ArgumentParser()
 parser.add_argument('--split', type=int, default=2)
 parser.add_argument('--output_dir', type=str, default='results/emdb/camera')
-parser.add_argument('--data_dir', type=str, required=True,
-                    help='Path to EMDB dataset root (containing P0, P1, ..., P9)')
 args = parser.parse_args()
 
 
 # EMDB dataset and splits
 roots = []
 for p in range(10):
-    folder = f'{args.data_dir}/P{p}'
+    folder = f'/mnt/kostas-graid/datasets/yufu/emdb/P{p}'
     root = sorted(glob(f'{folder}/*'))
     roots.extend(root)
 
@@ -43,7 +41,7 @@ for root in roots:
 
 
 # Save folder
-savefolder = args.output_dir
+savefolder = args.ourtput_dir
 os.makedirs(savefolder, exist_ok=True)
 
 # ViTDet

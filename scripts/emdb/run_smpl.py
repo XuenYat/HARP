@@ -18,15 +18,13 @@ parser.add_argument('--split', type=int, default=2)
 parser.add_argument('--output_dir', type=str, default='results/emdb/smpl')
 parser.add_argument('--ckpt', type=str, default='results/harp_beta_consist/checkpoint_best.pth.tar')
 parser.add_argument('--efficient', action='store_true', help='efficient option, but increase ACC error.')
-parser.add_argument('--data_dir', type=str, required=True,
-                    help='Path to EMDB dataset root (containing P0, P1, ..., P9)')
 args = parser.parse_args()
 
 
 # EMDB dataset and splits
 roots = []
 for p in range(10):
-    folder = f'{args.data_dir}/P{p}'
+    folder = f'/workspace/dataset/emdb/P{p}'
     root = sorted(glob(f'{folder}/*'))
     roots.extend(root)
 

@@ -19,15 +19,13 @@ from lib.camera.slam_utils import eval_slam
 parser = argparse.ArgumentParser()
 parser.add_argument('--split', type=int, default=2)
 parser.add_argument('--input_dir', type=str, default='results/emdb')
-parser.add_argument('--data_dir', type=str, required=True,
-                    help='Path to EMDB dataset root (containing P0, P1, ..., P9)')
 args = parser.parse_args()
 input_dir = args.input_dir
 
 # EMDB dataset and splits
 roots = []
 for p in range(10):
-    folder = f'{args.data_dir}/P{p}'
+    folder = f'/mnt/kostas-graid/datasets/yufu/emdb/P{p}'
     root = sorted(glob(f'{folder}/*'))
     roots.extend(root)
 

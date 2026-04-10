@@ -1,5 +1,7 @@
 ## HARP: Human Anchor for Robust Positioning in Monocular Trajectory Annotation
 
+> **Note**: Full code will be released upon paper acceptance. This repository currently contains the project overview and demo video.
+
 Built on top of [TRAM](https://github.com/yufu-wang/tram), HARP improves the robustness of metric scale estimation for monocular human trajectory annotation. Instead of relying solely on background depth prediction (which fails in low-texture, dark, or stage environments), HARP leverages the metric depth already estimated by pose regression as a geometric anchor.
 
 ### Demo: TRAM vs HARP on Stage Performance Video
@@ -43,7 +45,7 @@ When background depth is reliable, the fusion defers to α_bg. In degraded envir
 
 ## Installation
 
-The setup follows [TRAM](https://github.com/yufu-wang/tram):
+*Code will be released upon acceptance.* The setup follows [TRAM](https://github.com/yufu-wang/tram):
 
 ```bash
 # Clone with submodules
@@ -77,20 +79,18 @@ python scripts/visualize_tram.py --video "./video.mov" --method harp
 ## Evaluation on EMDB
 
 ```bash
-# Full EMDB evaluation pipeline (edit data_dir in run.sh first)
-bash scripts/emdb/run.sh
-
-# Or run steps individually
-python scripts/emdb/run_cam.py  --split 2 --data_dir /path/to/emdb --output_dir results/emdb/camera
-python scripts/emdb/run_smpl.py --split 2 --data_dir /path/to/emdb --output_dir results/emdb/smpl
-python scripts/emdb/run_eval.py --split 2 --data_dir /path/to/emdb --input_dir results/emdb
-
-# HARP evaluation with per-category breakdown
+# Full HARP evaluation with per-category breakdown
 python scripts/emdb/harp_eval_emdb.py \
     --emdb_root /path/to/emdb \
-    --tram_results results/emdb \
+    --tram_results results/emdb_harp_shapereg \
     --harp_intermediates results/emdb_harp/intermediates \
     --save_dir results/harp_eval
+
+# Background degradation robustness test
+python scripts/experiments/harp_degradation.py \
+    --emdb_root /path/to/emdb \
+    --intermediates_dir results/emdb_harp/intermediates \
+    --save_dir results/harp_degradation
 ```
 
 ## Training
